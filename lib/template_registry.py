@@ -6,7 +6,7 @@ import settings
 if settings.COINDAEMON_ALGO == 'scrypt':
     import ltc_scrypt
 elif settings.COINDAEMON_ALGO  == 'scrypt-jane':
-    import yac_scrypt
+    scryptjane = __import__(settings.SCRYPTJANE_NAME) 
 elif settings.COINDAEMON_ALGO == 'quark':
     import quark_hash
 elif settings.COINDAEMON_ALGO == 'skeinhash':
@@ -159,16 +159,21 @@ class TemplateRegistry(object):
         elif settings.COINDAEMON_ALGO == 'riecoin':
             return difficulty
         else:
-            diff1 = 0x00000000ffff0000000000000000000000000000000000000000000000000000
+            #diff1 = 0x00000000ffff0000000000000000000000000000000000000000000000000000
+            diff1 = 0x00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff
 
         return diff1 / difficulty
     
-    def get_job(self, job_id):
+    def get_job(self, job_id, worker_name, ip=False):
         '''For given job_id returns BlockTemplate instance or None'''
         try:
             j = self.jobs[job_id]
         except:
-            log.info("Job id '%s' not found" % job_id)
+            log.info("Job id '%s' not found, worker_name: '%s'" % (job_id, worker_name))
+
+            if ip:
+                log.info("Worker submited invalid Job id: IP %s", str(ip))
+
             return None
         
         # Now we have to check if job is still valid.
@@ -185,23 +190,39 @@ class TemplateRegistry(object):
         return j
         
     def submit_share(self, job_id, worker_name, session, extranonce1_bin, extranonce2, ntime, nonce,
-                     difficulty):
+                     difficulty, ip=False):
         '''Check parameters and finalize block template. If it leads
            to valid block candidate, asynchronously submits the block
            back to the bitcoin network.
         
             - extranonce1_bin is binary. No checks performed, it should be from session data
             - job_id, extranonce2, ntime, nonce - in hex form sent by the client
-            - difficulty - decimal number from session, again no checks performed
+            - difficulty - decimal number from session
             - submitblock_callback - reference to method which receive result of submitblock()
+            - difficulty is checked to see if its lower than the vardiff minimum target or pool target
+              from conf/config.py and if it is the share is rejected due to it not meeting the requirements for a share
+              
         '''
-        
+        if settings.VARIABLE_DIFF == True:
+            # Share Diff Should never be 0 
+            if difficulty < settings.VDIFF_MIN_TARGET :
+        	log.exception("Worker %s @ IP: %s seems to be submitting Fake Shares"%(worker_name,ip))
+        	raise SubmitException("Diff is %s Share Rejected Reporting to Admin"%(difficulty))
+        else:
+             if difficulty < settings.POOL_TARGET:
+             	log.exception("Worker %s @ IP: %s seems to be submitting Fake Shares"%(worker_name,ip))
+        	raise SubmitException("Diff is %s Share Rejected Reporting to Admin"%(difficulty))
+        	
         # Check if extranonce2 looks correctly. extranonce2 is in hex form...
         if len(extranonce2) != self.extranonce2_size * 2:
             raise SubmitException("Incorrect size of extranonce2. Expected %d chars" % (self.extranonce2_size*2))
         
+        # normalize the case to prevent duplication of valid shares by the client
+	ntime = ntime.lower()
+	nonce = nonce.lower()
+	extranonce2 = extranonce2.lower()
         # Check for job
-        job = self.get_job(job_id)
+        job = self.get_job(job_id, worker_name, ip)
         if job == None:
             raise SubmitException("Job '%s' not found" % job_id)
                 
@@ -256,7 +277,10 @@ class TemplateRegistry(object):
         if settings.COINDAEMON_ALGO == 'scrypt':
             hash_bin = ltc_scrypt.getPoWHash(''.join([ header_bin[i*4:i*4+4][::-1] for i in range(0, 20) ]))
         elif settings.COINDAEMON_ALGO  == 'scrypt-jane':
-            hash_bin = yac_scrypt.getPoWHash(''.join([ header_bin[i*4:i*4+4][::-1] for i in range(0, 20) ]), int(ntime, 16))
+        	if settings.SCRYPTJANE_NAME == 'vtc_scrypt':
+            	     hash_bin = scryptjane.getPoWHash(''.join([ header_bin[i*4:i*4+4][::-1] for i in range(0, 20) ]))
+      		else: 
+      		     hash_bin = scryptjane.getPoWHash(''.join([ header_bin[i*4:i*4+4][::-1] for i in range(0, 20) ]), int(ntime, 16))
         elif settings.COINDAEMON_ALGO == 'quark':
             hash_bin = quark_hash.getPoWHash(''.join([ header_bin[i*4:i*4+4][::-1] for i in range(0, 20) ]))
 	elif settings.COINDAEMON_ALGO == 'skeinhash':

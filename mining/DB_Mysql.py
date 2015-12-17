@@ -125,7 +125,7 @@ class DB_Mysql():
 
         shareid = self.dbc.fetchone()
 
-        if shareid[0] > 0:
+        if shareid and shareid[0] > 0:
             # Note: difficulty = -1 here
             self.execute(
                 """
@@ -208,7 +208,7 @@ class DB_Mysql():
     def get_uid(self, id_or_username):
         log.debug("Finding user id of %s", id_or_username)
         uname = id_or_username.split(".", 1)[0]
-        self.execute("SELECT `id` FROM `accounts` where username = %s", (uname))
+        self.execute("SELECT id FROM accounts where username = %s", (uname,))
         row = self.dbc.fetchone()
 
         if row is None:
@@ -352,6 +352,17 @@ class DB_Mysql():
 
     def close(self):
         self.dbh.close()
+        
+    def get_worker_diff(self,username):
+        self.dbc.execute("select difficulty from pool_worker where username = %s",(username))
+        data = self.dbc.fetchone()
+        if data[0] > 0 :
+           return data[0]
+        return settings.POOL_TARGET
+
+    def set_worker_diff(self,username, difficulty):
+        self.execute("UPDATE `pool_worker` SET `difficulty` = %s WHERE `username` = %s",(difficulty,username))
+        self.dbh.commit()
 
     def check_tables(self):
         log.debug("Checking Database")

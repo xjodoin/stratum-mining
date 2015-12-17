@@ -2,4 +2,9 @@
 conf/config.py
 *.log
 LOG
-*.bak
+
+#IDEA
+.idea
+*.iml
+*.ipr
+*.iws
